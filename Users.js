@@ -18,7 +18,7 @@ connectDB();
 
 
 const UserSchema = new Schema({
-    name: String,
+    name: { type: String, required: true },
     username: { type: String, required: true, index: { unique: true } },
     password: { type: String, required: true, select: false }
 });

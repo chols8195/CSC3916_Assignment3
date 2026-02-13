@@ -1,3 +1,5 @@
+require('dotenv').config();
+const mongoose = require('mongoose');
 const express = require('express');
 const bodyParser = require('body-parser');
 const passport = require('passport');
@@ -11,8 +13,12 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false }));
-
 app.use(passport.initialize());
+
+// Connection to MongoDB
+mongoose.connect(process.env.DB)
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err))
 
 const router = express.Router();
 
@@ -43,7 +49,6 @@ router.post('/signup', async (req, res) => { // Use async/await
   }
 });
 
-
 router.post('/signin', async (req, res) => { // Use async/await
   try {
     const user = await User.findOne({ username: req.body.username }).select('name username password');
@@ -69,11 +74,137 @@ router.post('/signin', async (req, res) => { // Use async/await
 
 router.route('/movies')
     .get(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'GET request not supported' });
+      try {
+        const movies = await Movie.find({});
+        res.status(200).json({ success: true, movies });
+      }
+      catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error fetching movies'});
+      }
     })
     .post(authJwtController.isAuthenticated, async (req, res) => {
-        return res.status(500).json({ success: false, message: 'POST request not supported' });
+      try {
+        const { title, releaseDate, genre, actors } = req.body;
+
+        // Validate required fields 
+        if (!title) {
+          return res.status(400).json({ success: false, message: 'Title is required'});
+        }
+        if (!releaseDate) {
+          return res.status(400).json({ success: false, message: 'Release date is required'});
+        }
+        if (!genre) {
+          return res.status(400).json({ success: false, message: 'Genre is required'});
+        }
+        if (!actors || actors.length < 3) {
+          return res.status(400).json({ success: false, message: 'At least 3 actors are required'});
+        }
+
+        // Validate each actor has required fields 
+        for (let i = 0; i < actors.length; i++) {
+          if (!actors[i].actorName || !actors[i].characterName) {
+            return res.status(400).json({
+              success: false, 
+              message: `Actor ${i + 1} must have both actorName and characterName`
+            });
+          }
+        }
+
+        const movie = new Movie({ title, releaseDate, genre, actors });
+        await movie.save();
+
+        res.status(201).json({ success: true, message: 'Movie saved successfully', movie });
+      }
+      catch (err) {
+        console.error(err);
+        res.status(500).json({ success: false, message: 'Error saving movie', error: err.message });
+      }
+    })
+    .put((req, res) => {
+      res.status(405).json({ success: false, message: 'PUT method not allowed on /movies. Use /movies/:title instead'});
+    })
+    .delete((req, res) => {
+      res.status(405).json({ success: false, message: 'DELETE method not allowed on /movies. Use /movies/:title instead' });
     });
+
+// GET, PUT, DELETE for specific movie title 
+router.route('/movies/:title')
+  .get(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movie = await Movie.findOne({ title: req.params.title });
+      if (!movie) {
+        return res.status(404).json({ success: false, message: 'Movie not found' });
+      }
+      res.status(200).json({ success: true, movie });
+    }
+    catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, message: 'Error fetching movie' });
+    }
+  })
+  .put(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const { title, releaseDate, genre, actors } = req.body;
+
+      // Validate actors if provided
+      if (actors && actors.length < 3) {
+        return res.status(400).json({ success: false, message: 'At least 3 actors are required' });
+      }
+
+      const movie = await Movie.findOneAndUpdate(
+        { title: req.params.title },
+        { title, releaseDate, genre, actors },
+        {new: true, runValidators: true }
+      );
+
+      if (!movie) {
+        return res.status(404).json({ success: false, message: 'Movie not found' });
+      }
+
+      res.status(200).json({ success: true, message: 'Movie updated successfully', movie });
+    }
+    catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, message: 'Error updating movie', error: err.message });
+    }
+  })
+  .delete(authJwtController.isAuthenticated, async (req, res) => {
+    try {
+      const movie = await Movie.findOneAndDelete({ title: req.params.title });
+
+      if (!movie) {
+        return res.status(404).json({ success: false, message: 'Movie not found' });
+      }
+
+      res.status(200).json({ success: true, message: 'Movie deleted successfully' });
+    }
+    catch (err) {
+      console.error(err);
+      res.status(500).json({ success: false, message: 'Error deleting movie', error: err.message })
+    }
+  })
+  .post((req, res) => {
+    res.status(405).json({ success: false, message: 'POST method not allowed on /movies/:title. Use /movies instead' });
+  });
+
+// Root route
+router.get('/', (req, res) => {
+  res.json({
+    message: 'CSC3916 Assignment 3: Movies API',
+    endpoints: {
+      signup: 'POST /signup',
+      signin: 'POST /signin',
+      movies: {
+        getAll: 'GET /movies',
+        getOne: 'GET /movies/:title',
+        create: 'POST /movies',
+        update: 'PUT /movies/:title',
+        delete: 'DELETE /movies/:title'
+      }
+    }
+  });
+});
 
 app.use('/', router);
 
