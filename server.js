@@ -25,14 +25,15 @@ const router = express.Router();
 // Removed getJSONObjectForMovieRequirement as it's not used
 
 router.post('/signup', async (req, res) => { // Use async/await
-  if (!req.body.username || !req.body.password) {
-    return res.status(400).json({ success: false, msg: 'Please include both username and password to signup.' }); // 400 Bad Request
+  if (!req.body.username || !req.body.password || !req.body.email) {
+    return res.status(400).json({ success: false, msg: 'Please include both username, email, and password to signup.' }); // 400 Bad Request
   }
 
   try {
     const user = new User({ // Create user directly with the data
       name: req.body.name,
       username: req.body.username,
+      email: req.body.email,
       password: req.body.password,
     });
 
@@ -41,7 +42,7 @@ router.post('/signup', async (req, res) => { // Use async/await
     res.status(201).json({ success: true, msg: 'Successfully created new user.' }); // 201 Created
   } catch (err) {
     if (err.code === 11000) { // Strict equality check (===)
-      return res.status(409).json({ success: false, message: 'A user with that username already exists.' }); // 409 Conflict
+      return res.status(409).json({ success: false, message: 'A user with that username or email already exists.' }); // 409 Conflict
     } else {
       console.error(err); // Log the error for debugging
       return res.status(500).json({ success: false, message: 'Something went wrong. Please try again later.' }); // 500 Internal Server Error
@@ -51,7 +52,13 @@ router.post('/signup', async (req, res) => { // Use async/await
 
 router.post('/signin', async (req, res) => { // Use async/await
   try {
-    const user = await User.findOne({ username: req.body.username }).select('name username password');
+    // User can use email or username to login
+    const user = await User.findOne({ 
+      $or: [
+        { username: req.body.username }, 
+        { email: req.body.username }
+      ]
+    }).select('name username email password');
 
     if (!user) {
       return res.status(401).json({ success: false, msg: 'Authentication failed. User not found.' }); // 401 Unauthorized
